@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="hce_description">TagCash</string>
+    <string name="hce_aid_description">Tag NDEF com o link a ser compartilhado</string>
+</resources>
