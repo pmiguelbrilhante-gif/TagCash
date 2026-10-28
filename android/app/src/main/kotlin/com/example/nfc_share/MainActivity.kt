@@ -48,6 +48,9 @@ class MainActivity : FlutterActivity() {
                     "isHceSupported" -> result.success(
                         packageManager.hasSystemFeature(PackageManager.FEATURE_NFC_HOST_CARD_EMULATION)
                     )
+                    "isNfcEnabled" -> result.success(
+                        NfcAdapter.getDefaultAdapter(this)?.isEnabled ?: false
+                    )
                     "setUrl" -> {
                         val url = call.argument<String>("url")
                         if (url == null) {

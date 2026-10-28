@@ -1,9 +1,5 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:nfc_manager/nfc_manager.dart';
-import 'package:nfc_manager_ndef/nfc_manager_ndef.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 void main() {
   runApp(const NfcShareApp());
@@ -17,11 +13,11 @@ class NfcShareApp extends StatelessWidget {
     return MaterialApp(
       title: 'TagCash',
       debugShowCheckedModeBanner: false,
-      themeMode: ThemeMode.system,
+      themeMode: ThemeMode.dark,
       darkTheme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
-        colorSchemeSeed: const Color.fromARGB(255, 5, 6, 7),
+        colorSchemeSeed: Colors.blue,
       ),
       home: const LinkScreen(),
     );
@@ -36,19 +32,16 @@ class LinkScreen extends StatefulWidget {
 }
 
 class _LinkScreenState extends State<LinkScreen> {
-
+  
   static const MethodChannel _hce = MethodChannel('nfc_share/hce');
 
   final TextEditingController _urlController = TextEditingController();
   bool _compartilhando = false;
-  bool _lendo = false;
-  String? _ultimoLink;
 
   @override
   void dispose() {
     _urlController.dispose();
     _hce.invokeMethod('clear');
-    NfcManager.instance.stopSession().catchError((_) {});
     super.dispose();
   }
 
@@ -58,8 +51,6 @@ class _LinkScreenState extends State<LinkScreen> {
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(texto)));
   }
-
-  // essa parte envia
 
   Future<void> _iniciarCompartilhamento() async {
     final texto = _urlController.text.trim();
@@ -73,6 +64,11 @@ class _LinkScreenState extends State<LinkScreen> {
       final suportado = await _hce.invokeMethod<bool>('isHceSupported') ?? false;
       if (!suportado) {
         _aviso('Este aparelho não suporta emulação de cartão NFC (HCE).');
+        return;
+      }
+      final ligado = await _hce.invokeMethod<bool>('isNfcEnabled') ?? false;
+      if (!ligado) {
+        _aviso('O NFC está desligado. Ative nas configurações do celular.');
         return;
       }
       await _hce.invokeMethod('setUrl', {'url': link});
@@ -89,75 +85,6 @@ class _LinkScreenState extends State<LinkScreen> {
     if (!mounted) return;
     setState(() => _compartilhando = false);
   }
-
-  // essa parte recebe, ao menos é a ideia 
-
-  Future<void> _iniciarLeitura() async {
-    final disponibilidade = await NfcManager.instance.checkAvailability();
-    if (disponibilidade != NfcAvailability.enabled) {
-      _aviso('NFC não está disponível ou está desativado neste aparelho.');
-      return;
-    }
-
-    setState(() => _lendo = true);
-    _aviso('Encoste este celular no que está compartilhando...');
-
-    NfcManager.instance.startSession(
-      
-      pollingOptions: {NfcPollingOption.iso14443},
-      onDiscovered: (NfcTag tag) async {
-        final link = _extrairLink(tag);
-        await NfcManager.instance.stopSession();
-        if (!mounted) return;
-        setState(() => _lendo = false);
-
-        if (link == null) {
-          _aviso('Nenhum link encontrado no outro aparelho.');
-          return;
-        }
-        setState(() => _ultimoLink = link);
-        await _abrirLink(link);
-      },
-    );
-  }
-
-  Future<void> _cancelarLeitura() async {
-    await NfcManager.instance.stopSession();
-    if (!mounted) return;
-    setState(() => _lendo = false);
-  }
-
-
-  String? _extrairLink(NfcTag tag) {
-    final ndef = Ndef.from(tag);
-    final mensagem = ndef?.cachedMessage;
-    if (mensagem == null) return null;
-
-    const prefixos = ['', 'http://www.', 'https://www.', 'http://', 'https://'];
-
-    for (final r in mensagem.records) {
-      final ehUri = r.type.length == 1 && r.type[0] == 0x55;
-      if (ehUri && r.payload.isNotEmpty) {
-        final codigo = r.payload[0];
-        final prefixo = codigo < prefixos.length ? prefixos[codigo] : '';
-        return prefixo + utf8.decode(r.payload.sublist(1));
-      }
-    }
-    return null;
-  }
-
-  Future<void> _abrirLink(String link) async {
-    final uri = Uri.tryParse(link);
-    // abre o link
-    if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
-      _aviso('Link ignorado por segurança: $link');
-      return;
-    }
-    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!ok) _aviso('Não consegui abrir: $link');
-  }
-
-  // ui
 
   @override
   Widget build(BuildContext context) {
@@ -206,42 +133,6 @@ class _LinkScreenState extends State<LinkScreen> {
                         textAlign: TextAlign.center,
                       ),
                     ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text('Receber link',
-                      style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 12),
-                  if (!_lendo)
-                    OutlinedButton.icon(
-                      onPressed: _iniciarLeitura,
-                      icon: const Icon(Icons.download),
-                      label: const Text('Aguardar link por NFC'),
-                    )
-                  else
-                    OutlinedButton.icon(
-                      onPressed: _cancelarLeitura,
-                      icon: const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      label: const Text('Escutando NFC... toque para cancelar'),
-                    ),
-                  if (_ultimoLink != null) ...[
-                    const SizedBox(height: 12),
-                    Text('Último link recebido:',
-                        style: Theme.of(context).textTheme.labelMedium),
-                    SelectableText(_ultimoLink!),
-                  ],
                 ],
               ),
             ),
